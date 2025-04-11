@@ -1,0 +1,99 @@
+{
+  "highScores": [
+    {
+      "difficulty": "MEDIUM",
+      "score": 9.2175155
+    },
+    {
+      "difficulty": "HARD",
+      "score": 126.5348284
+    },
+    {
+      "difficulty": "EASY",
+      "score": 52.9627318
+    },
+    {
+      "difficulty": "HARD",
+      "score": 47.1641076
+    },
+    {
+      "difficulty": "EASY",
+      "score": 5.9124386
+    },
+    {
+      "difficulty": "EASY",
+      "score": 5.9063719
+    },
+    {
+      "difficulty": "MEDIUM",
+      "score": 4.4194905
+    },
+    {
+      "difficulty": "HARD",
+      "score": 3.540712
+    }
+  ],
+  "soundEnabled": true,
+  "gameHistory": [
+    {
+      "difficulty": "HARD",
+      "score": 19.4816042
+    },
+    {
+      "difficulty": "HARD",
+      "score": 3.5337768
+    },
+    {
+      "difficulty": "MEDIUM",
+      "score": 9.2175155
+    },
+    {
+      "difficulty": "EASY",
+      "score": 12.2107138
+    },
+    {
+      "difficulty": "HARD",
+      "score": 23.3238305
+    },
+    {
+      "difficulty": "HARD",
+      "score": 17.8198829
+    },
+    {
+      "difficulty": "HARD",
+      "score": 4.5708906
+    },
+    {
+      "difficulty": "HARD",
+      "score": 126.5348284
+    },
+    {
+      "difficulty": "HARD",
+      "score": 5.5641334
+    },
+    {
+      "difficulty": "EASY",
+      "score": 52.9627318
+    },
+    {
+      "difficulty": "HARD",
+      "score": 47.1641076
+    },
+    {
+      "difficulty": "EASY",
+      "score": 5.9124386
+    },
+    {
+      "difficulty": "EASY",
+      "score": 5.9063719
+    },
+    {
+      "difficulty": "MEDIUM",
+      "score": 4.4194905
+    },
+    {
+      "difficulty": "HARD",
+      "score": 3.540712
+    }
+  ]
+}

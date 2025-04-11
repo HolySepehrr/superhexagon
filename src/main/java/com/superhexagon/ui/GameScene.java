@@ -2,18 +2,25 @@ package com.superhexagon.ui;
 
 import com.superhexagon.model.GameMode;
 import com.superhexagon.model.HighScore;
+import com.superhexagon.util.DataManager;
 import com.superhexagon.util.SoundManager;
 import javafx.animation.AnimationTimer;
+import javafx.animation.FadeTransition;
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Line;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.Stop;
 import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Shape;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.scene.control.Button;
+import javafx.scene.effect.DropShadow;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +35,7 @@ public class GameScene {
     private Polygon player;
     private List<Polygon> obstacles;
     private List<Polygon> obstacleTemplates;
-    private List<Line> backgroundLines;
+    private List<Polygon> backgroundSections;
     private double rotationSpeed;
     private int playerSide;
     private double hexagonRotation;
@@ -43,43 +50,80 @@ public class GameScene {
     private AnimationTimer gameLoop;
     private long startTime;
     private Text timerText;
-    private Text highScoreText; // اضافه کردن متن برای نمایش بهترین رکورد
+    private Text highScoreText;
     private Text newRecordText;
     private Random random;
     private Pane gameOverPane;
-    private Pane pausePane; // اضافه کردن پنل برای حالت توقف
-    private boolean isPaused; // متغیر برای حالت توقف
+    private Pane pausePane;
+    private boolean isPaused;
     private int patternIndex;
     private int patternStep;
     private long spawnInterval;
     private Pane highScorePane;
+    private final DataManager dataManager;
+
+    private Color colorLight = Color.rgb(255, 147, 41);
+    private Color colorDark = Color.rgb(200, 100, 0);
+    private Color colorObstacle = Color.rgb(255, 120, 0);
+    private long lastColorChange = 0;
+    private static final long COLOR_CHANGE_INTERVAL = 10_000_000_000L;
+    private List<Color[]> colorThemes;
 
     private static final double INITIAL_DISTANCE = 300;
     private static final double MIN_DISTANCE = 50;
     private static final double OBSTACLE_LENGTH = 20;
     private static final double OBSTACLE_WIDTH = 50;
     private static final double COLLISION_TOLERANCE = 5.0;
-    private static final double BASE_SPAWN_DISTANCE = 2.25;
+
+    private boolean isSecondPattern = false;
 
     public GameScene(Consumer<String> sceneSwitcher, Consumer<HighScore> updateHighScore, Supplier<HighScore> getHighScore,
                      Supplier<SoundManager> soundManager, Supplier<Integer> getSides, Supplier<GameMode> getGameMode,
                      Supplier<List<HighScore>> getAllHighScores) {
         this.sceneSwitcher = sceneSwitcher;
-        this.updateHighScore = updateHighScore;
-        this.getHighScore = getHighScore;
+        this.dataManager = new DataManager();
+        this.updateHighScore = highScore -> {
+            DataManager.GameData gameData = dataManager.loadGameData();
+            List<HighScore> highScores = gameData.getHighScores();
+            List<DataManager.GameRecord> gameHistory = gameData.getGameHistory();
+
+            // ذخیره همه رکوردها بدون شرط
+            highScores.add(highScore);
+
+            // اضافه کردن بازی به تاریخچه (فقط سختی و امتیاز)
+            gameHistory.add(new DataManager.GameRecord(highScore.getDifficulty(), highScore.getScore()));
+
+            // ذخیره همه داده‌ها
+            dataManager.saveGameData(highScores, soundManager.get().isSoundEnabled(), gameHistory);
+        };
+        this.getHighScore = () -> {
+            DataManager.GameData gameData = dataManager.loadGameData();
+            return dataManager.loadGameData().getHighScores().stream()
+                    .filter(hs -> hs.getDifficulty() == getGameMode.get())
+                    .findFirst().orElse(null);
+        };
+        this.getAllHighScores = () -> dataManager.loadGameData().getHighScores();
         this.soundManager = soundManager;
         this.getSides = getSides;
         this.getGameMode = getGameMode;
         this.getAllHighScores = getAllHighScores;
         this.obstacles = new ArrayList<>();
         this.obstacleTemplates = new ArrayList<>();
-        this.backgroundLines = new ArrayList<>();
+        this.backgroundSections = new ArrayList<>();
         this.hexagonRotation = 0;
         this.playerSide = 0;
         this.random = new Random();
         this.patternIndex = 0;
         this.patternStep = 0;
-        this.isPaused = false; // مقداردهی اولیه
+        this.isPaused = false;
+
+        colorThemes = new ArrayList<>();
+        colorThemes.add(new Color[]{Color.rgb(255, 147, 41), Color.rgb(200, 100, 0), Color.rgb(255, 120, 0)});
+        colorThemes.add(new Color[]{Color.rgb(100, 255, 100), Color.rgb(0, 150, 0), Color.rgb(0, 200, 0)});
+        colorThemes.add(new Color[]{Color.rgb(100, 200, 255), Color.rgb(0, 100, 200), Color.rgb(0, 150, 255)});
+        colorThemes.add(new Color[]{Color.rgb(255, 150, 200), Color.rgb(200, 50, 150), Color.rgb(255, 80, 180)});
+        colorThemes.add(new Color[]{Color.rgb(200, 100, 255), Color.rgb(100, 0, 200), Color.rgb(150, 0, 255)});
+
         createScene();
         createObstacleTemplates();
     }
@@ -96,41 +140,44 @@ public class GameScene {
             double angle = Math.toRadians(60 * i);
             hexagon.getPoints().addAll(Math.cos(angle) * radius, Math.sin(angle) * radius);
         }
-        hexagon.setFill(null);
-        hexagon.setStroke(Color.ORANGE);
+        hexagon.setFill(colorDark);
+        hexagon.setStroke(colorObstacle);
         hexagon.setStrokeWidth(2);
         hexagon.setTranslateX(300);
         hexagon.setTranslateY(200);
 
         player = new Polygon(0, -6, -3, 4, 3, 4);
-        player.setFill(Color.BLACK);
+        player.setFill(colorObstacle);
         updatePlayerPosition();
 
         timerText = new Text("TIME 00:00");
-        timerText.setFont(Font.font("Arial", 20));
+        timerText.setFont(Font.font("Verdana", 18));
         timerText.setFill(Color.WHITE);
-        timerText.setTranslateX(500);
+        timerText.setStroke(Color.BLACK);
+        timerText.setStrokeWidth(0.5);
+        timerText.setTranslateX(450);
         timerText.setTranslateY(30);
 
-        // اضافه کردن متن برای نمایش بهترین رکورد
         HighScore highScore = getHighScore.get();
-        double highScoreValue = (highScore != null && highScore.getDifficulty() == getGameMode.get()) ? highScore.getScore() : 0;
+        double highScoreValue = (highScore != null) ? highScore.getScore() : 0;
         int highScoreMinutes = (int) (highScoreValue / 60);
         int highScoreSeconds = (int) (highScoreValue % 60);
         highScoreText = new Text(String.format("BEST %02d:%02d", highScoreMinutes, highScoreSeconds));
-        highScoreText.setFont(Font.font("Arial", 20));
+        highScoreText.setFont(Font.font("Verdana", 18));
         highScoreText.setFill(Color.WHITE);
-        highScoreText.setTranslateX(500);
+        highScoreText.setStroke(Color.BLACK);
+        highScoreText.setStrokeWidth(0.5);
+        highScoreText.setTranslateX(450);
         highScoreText.setTranslateY(60);
 
         newRecordText = new Text("NEW RECORD");
-        newRecordText.setFont(Font.font("Arial", 20));
+        newRecordText.setFont(Font.font("Verdana", 20));
         newRecordText.setFill(Color.WHITE);
         newRecordText.setTranslateX(20);
         newRecordText.setTranslateY(30);
         newRecordText.setVisible(false);
 
-        root.getChildren().addAll(backgroundLines);
+        root.getChildren().addAll(backgroundSections);
         root.getChildren().addAll(hexagon, player, timerText, highScoreText, newRecordText);
 
         GameMode mode = getGameMode.get();
@@ -139,25 +186,20 @@ public class GameScene {
         }
         resetSpeeds();
 
-        double spawnIntervalSeconds = BASE_SPAWN_DISTANCE / obstacleSpeed;
-        spawnInterval = (long) (spawnIntervalSeconds * 1_000_000_000);
-
         scene.setOnKeyPressed(event -> {
             if (event.getCode() == KeyCode.LEFT) {
                 playerSide = (playerSide - 1 + 6) % 6;
                 updatePlayerPosition();
-                System.out.println("Moved left, playerSide: " + playerSide);
             } else if (event.getCode() == KeyCode.RIGHT) {
                 playerSide = (playerSide + 1) % 6;
                 updatePlayerPosition();
-                System.out.println("Moved right, playerSide: " + playerSide);
             } else if (event.getCode() == KeyCode.ESCAPE) {
                 double score = (System.nanoTime() - startTime) / 1_000_000_000.0;
                 updateHighScore.accept(new HighScore(getGameMode.get(), score));
                 gameLoop.stop();
                 soundManager.get().stopBackgroundMusic();
                 showGameOverScreen(score);
-            } else if (event.getCode() == KeyCode.P) { // اضافه کردن کلید P برای توقف/ادامه
+            } else if (event.getCode() == KeyCode.P) {
                 if (isPaused) {
                     resumeGame();
                 } else {
@@ -167,6 +209,55 @@ public class GameScene {
         });
 
         root.requestFocus();
+    }
+
+    private void createBackground() {
+        backgroundSections.clear();
+        double maxRadius = 300;
+
+        for (int i = 0; i < 6; i++) {
+            double startAngle = Math.toRadians(60 * i);
+            double endAngle = Math.toRadians(60 * (i + 1));
+            Polygon section = new Polygon();
+            section.getPoints().addAll(
+                    300.0, 200.0,
+                    300 + Math.cos(startAngle) * maxRadius, 200 + Math.sin(startAngle) * maxRadius,
+                    300 + Math.cos(endAngle) * maxRadius, 200 + Math.sin(endAngle) * maxRadius
+            );
+            section.setFill(i % 2 == 0 ? colorLight : colorDark);
+            backgroundSections.add(section);
+        }
+    }
+
+    private void createObstacleTemplates() {
+        for (int side = 0; side < 6; side++) {
+            double baseAngle = side * 60;
+            double distance = INITIAL_DISTANCE;
+
+            double theta1 = Math.toRadians(baseAngle);
+            double theta2 = Math.toRadians(baseAngle + 60);
+
+            double xB = distance * Math.cos(theta1);
+            double yB = distance * Math.sin(theta1);
+            double xC = distance * Math.cos(theta2);
+            double yC = distance * Math.sin(theta2);
+            double xA = (distance + OBSTACLE_LENGTH) * Math.cos(theta1);
+            double yA = (distance + OBSTACLE_LENGTH) * Math.sin(theta1);
+            double xD = (distance + OBSTACLE_LENGTH) * Math.cos(theta2);
+            double yD = (distance + OBSTACLE_LENGTH) * Math.sin(theta2);
+
+            Polygon obstacle = new Polygon(
+                    xA, yA,
+                    xB, yB,
+                    xC, yC,
+                    xD, yD
+            );
+            obstacle.setFill(colorObstacle);
+            obstacle.setTranslateX(300);
+            obstacle.setTranslateY(200);
+            obstacle.setUserData(new double[]{baseAngle, distance});
+            obstacleTemplates.add(obstacle);
+        }
     }
 
     private void pauseGame() {
@@ -179,7 +270,7 @@ public class GameScene {
         pausePane.setPrefSize(600, 400);
 
         Text pauseText = new Text("Paused");
-        pauseText.setFont(Font.font("Arial", 40));
+        pauseText.setFont(Font.font("Verdana", 40));
         pauseText.setFill(Color.WHITE);
         pauseText.setTranslateX(250);
         pauseText.setTranslateY(150);
@@ -214,120 +305,75 @@ public class GameScene {
         GameMode mode = getGameMode.get();
         switch (mode) {
             case EASY:
-                rotationSpeed = 1.0;
-                obstacleSpeed = 1.0;
+                rotationSpeed = 1.5; // سرعت چرخش کمتر
+                obstacleSpeed = 0.6; // سرعت موانع کمتر
+                spawnInterval = 2_812_500_000L; // 2.8125 ثانیه فاصله اسپان
                 soundManager.get().setBackgroundMusic("/easy_theme.mp3");
                 break;
             case MEDIUM:
-                rotationSpeed = 1.5;
-                obstacleSpeed = 1.5;
+                rotationSpeed = 2.0;
+                obstacleSpeed = 0.8;
+                spawnInterval = 2_812_500_000L; // 2.8125 ثانیه فاصله اسپان
                 soundManager.get().setBackgroundMusic("/medium_theme.mp3");
                 break;
             case HARD:
-                rotationSpeed = 2.0;
-                obstacleSpeed = 2.0;
+                rotationSpeed = 2.5; // سرعت چرخش بیشتر
+                obstacleSpeed = 1.0; // سرعت موانع بیشتر
+                spawnInterval = 1_687_500_000L; // 1.6875 ثانیه فاصله اسپان
                 soundManager.get().setBackgroundMusic("/hard_theme.mp3");
                 break;
         }
     }
 
-    private void createBackground() {
-        double maxRadius = 300;
-        Color color1 = Color.rgb(200, 50, 0);
-        Color color2 = Color.rgb(100, 30, 0);
-
-        for (int i = 0; i < 6; i++) {
-            double startAngle = 60 * i;
-            double endAngle = 60 * (i + 1);
-            int numLines = 10;
-            double angleStep = (endAngle - startAngle) / numLines;
-
-            for (int j = 0; j < numLines; j++) {
-                double angle = Math.toRadians(startAngle + j * angleStep);
-                double endX = 300 + Math.cos(angle) * maxRadius;
-                double endY = 200 + Math.sin(angle) * maxRadius;
-                Line line = new Line(300, 200, endX, endY);
-                line.setStroke(j % 2 == 0 ? color1 : color2);
-                line.setStrokeWidth(5);
-                backgroundLines.add(line);
-            }
-        }
-    }
-
-    private void createObstacleTemplates() {
-        for (int side = 0; side < 6; side++) {
-            double baseAngle = side * 60;
-            double distance = INITIAL_DISTANCE;
-
-            double theta1 = Math.toRadians(baseAngle);
-            double theta2 = Math.toRadians(baseAngle + 60);
-
-            double xB = distance * Math.cos(theta1);
-            double yB = distance * Math.sin(theta1);
-            double xC = distance * Math.cos(theta2);
-            double yC = distance * Math.sin(theta2);
-            double xA = (distance + OBSTACLE_LENGTH) * Math.cos(theta1);
-            double yA = (distance + OBSTACLE_LENGTH) * Math.sin(theta1);
-            double xD = (distance + OBSTACLE_LENGTH) * Math.cos(theta2);
-            double yD = (distance + OBSTACLE_LENGTH) * Math.sin(theta2);
-
-            Polygon obstacle = new Polygon(
-                    xA, yA,
-                    xB, yB,
-                    xC, yC,
-                    xD, yD
-            );
-            obstacle.setFill(Color.ORANGE);
-            obstacle.setTranslateX(300);
-            obstacle.setTranslateY(200);
-            if (side == 0) {
-                obstacle.setRotate(0);
-            } else if (side == 1) {
-                obstacle.setRotate(0);
-            } else if (side == 2) {
-                obstacle.setRotate(0);
-            } else if (side == 3) {
-                obstacle.setRotate(180 + 180);
-            } else if (side == 4) {
-                obstacle.setRotate(0);
-            } else if (side == 5) {
-                obstacle.setRotate(0);
-            }
-            obstacle.setUserData(new double[]{baseAngle, distance});
-            obstacleTemplates.add(obstacle);
-        }
-    }
-
     private List<Integer> getNextObstaclePattern() {
         List<Integer> selectedSides = new ArrayList<>();
-        int numObstacles = random.nextInt(5) + 1;
 
         List<List<Integer>> patterns = new ArrayList<>();
-        patterns.add(new ArrayList<>(List.of(0, 1, 2, 3, 4, 5)));
-        patterns.add(new ArrayList<>(List.of(0, 3, 1, 4, 2, 5)));
-        patterns.add(new ArrayList<>(List.of(0, 2, 4, 1, 3, 5)));
-        List<Integer> restrictedRandom = new ArrayList<>();
-        restrictedRandom.add(0);
-        for (int i = 0; i < 5; i++) {
-            restrictedRandom.add(random.nextInt(5) + 1);
-        }
-        patterns.add(restrictedRandom);
+        patterns.add(new ArrayList<>(List.of(0, 1, 2)));         // الگوی رندم 1
+        patterns.add(new ArrayList<>(List.of(0, 3, 1)));         // الگوی رندم 2
+        patterns.add(new ArrayList<>(List.of(0, 2, 4)));         // الگوی رندم 3
+        patterns.add(new ArrayList<>(List.of(0, 1, 2, 3, 4)));  // الگوی رندم 4
+        patterns.add(new ArrayList<>(List.of(0, 2, 4, 1, 3)));  // الگوی رندم 5
+        patterns.add(new ArrayList<>(List.of(0, 2, 4)));         // الگوی جدید: 3 مانع یه درمیون
+        patterns.add(new ArrayList<>(List.of(1, 2, 3, 4, 5)));  // الگوی جدید: دو الگو با 5 مانع (الگوی اول)
 
         if (patternStep == 0) {
-            patternIndex = random.nextInt(patterns.size());
+            // وزن‌ها: الگوهای رندم (5 تای اول) وزن 3، الگوهای جدید (2 تای آخر) وزن 1
+            int totalWeight = (5 * 3) + (2 * 1); // 15 + 2 = 17
+            int randomWeight = random.nextInt(totalWeight); // 0 تا 16
+
+            if (randomWeight < 15) { // 0 تا 14: الگوهای رندم (وزن 15)
+                patternIndex = randomWeight / 3; // 0, 1, 2, 3, 4
+            } else { // 15 تا 16: الگوهای جدید (وزن 2)
+                patternIndex = 5 + (randomWeight - 15); // 5 یا 6
+            }
+            isSecondPattern = false; // ریست کردن برای الگوهای دوتایی
         }
 
-        List<Integer> currentPattern = patterns.get(patternIndex);
-        for (int i = 0; i < numObstacles; i++) {
-            int side = currentPattern.get(patternStep % currentPattern.size());
-            if (!selectedSides.contains(side)) {
-                selectedSides.add(side);
+        List<Integer> currentPattern;
+        // اگه الگوی انتخاب‌شده الگوی دوتایی (آخرین الگو) باشه
+        if (patternIndex == patterns.size() - 1) {
+            if (!isSecondPattern) {
+                // الگوی اول: ضلع 0 خالی، موانع روی 1, 2, 3, 4, 5
+                currentPattern = patterns.get(patternIndex);
+                isSecondPattern = true; // دفعه بعد الگوی دوم رو اجرا می‌کنیم
+            } else {
+                // الگوی دوم: ضلع 3 خالی (روبروی ضلع 0)، موانع روی 0, 1, 2, 4, 5
+                currentPattern = new ArrayList<>(List.of(0, 1, 2, 4, 5));
+                isSecondPattern = false; // ریست برای دور بعدی
             }
-            patternStep++;
-            if (patternStep >= currentPattern.size()) {
-                patternStep = 0;
-            }
+        } else {
+            // برای الگوهای معمولی
+            currentPattern = patterns.get(patternIndex);
         }
+
+        // اگه الگو از تعداد موانع تصادفی کمتر باشه، تعداد موانع رو با الگو تنظیم می‌کنیم
+        int numObstacles = (patternIndex == patterns.size() - 1) ? 5 : Math.min(random.nextInt(5) + 1, currentPattern.size());
+        for (int i = 0; i < numObstacles; i++) {
+            int side = currentPattern.get(i % currentPattern.size());
+            selectedSides.add(side);
+        }
+        patternStep = (patternStep + 1) % currentPattern.size();
 
         return selectedSides;
     }
@@ -341,7 +387,7 @@ public class GameScene {
             Polygon template = obstacleTemplates.get(templateIndex);
             Polygon obstacle = new Polygon();
             obstacle.getPoints().addAll(template.getPoints());
-            obstacle.setFill(template.getFill());
+            obstacle.setFill(colorObstacle);
             obstacle.setTranslateX(template.getTranslateX());
             obstacle.setTranslateY(template.getTranslateY());
             obstacle.setRotate(template.getRotate());
@@ -377,57 +423,64 @@ public class GameScene {
         gameOverPane.setPrefSize(600, 400);
 
         Text gameOverText = new Text("Game Over");
-        gameOverText.setFont(Font.font("Arial", 40));
+        gameOverText.setFont(Font.font("Verdana", 40));
         gameOverText.setFill(Color.RED);
         gameOverText.setTranslateX(230);
-        gameOverText.setTranslateY(100);
+        gameOverText.setTranslateY(50);
 
         int currentMinutes = (int) (currentScore / 60);
         int currentSeconds = (int) (currentScore % 60);
         Text currentScoreText = new Text(String.format("Your Score: %02d:%02d", currentMinutes, currentSeconds));
-        currentScoreText.setFont(Font.font("Arial", 20));
+        currentScoreText.setFont(Font.font("Verdana", 20));
         currentScoreText.setFill(Color.WHITE);
         currentScoreText.setTranslateX(240);
-        currentScoreText.setTranslateY(150);
+        currentScoreText.setTranslateY(90);
 
         HighScore highScore = getHighScore.get();
-        double highScoreValue = (highScore != null && highScore.getDifficulty() == getGameMode.get()) ? highScore.getScore() : 0;
+        double highScoreValue = (highScore != null) ? highScore.getScore() : 0;
         int highScoreMinutes = (int) (highScoreValue / 60);
         int highScoreSeconds = (int) (highScoreValue % 60);
-        Text highScoreText = new Text(String.format("High Score (%s): %02d:%02d", getGameMode.get(), highScoreMinutes, highScoreSeconds));
-        highScoreText.setFont(Font.font("Arial", 20));
+        Text highScoreText = new Text(String.format("High Score (%s): %02d:%02d", getGameMode.get().getName(), highScoreMinutes, highScoreSeconds));
+        highScoreText.setFont(Font.font("Verdana", 20));
         highScoreText.setFill(Color.WHITE);
         highScoreText.setTranslateX(220);
-        highScoreText.setTranslateY(180);
+        highScoreText.setTranslateY(120);
 
-        Button restartButton = new Button("Restart");
-        restartButton.setTranslateX(260);
-        restartButton.setTranslateY(220);
+        LinearGradient buttonGradient = new LinearGradient(
+                0, 0, 1, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0, colorLight),
+                new Stop(1, colorDark)
+        );
+        DropShadow shadow = new DropShadow(10, Color.BLACK);
+
+        VBox leftColumn = new VBox(10);
+        leftColumn.setTranslateX(150);
+        leftColumn.setTranslateY(150);
+
+        VBox rightColumn = new VBox(10);
+        rightColumn.setTranslateX(310);
+        rightColumn.setTranslateY(150);
+
+        Button restartButton = createStyledButton("Restart", buttonGradient, shadow);
         restartButton.setOnAction(e -> {
             root.getChildren().remove(gameOverPane);
             resetGame();
             startGame();
         });
 
-        Button changeDifficultyButton = new Button("Change Difficulty");
-        changeDifficultyButton.setTranslateX(240);
-        changeDifficultyButton.setTranslateY(260);
+        Button changeDifficultyButton = createStyledButton("Change Difficulty", buttonGradient, shadow);
         changeDifficultyButton.setOnAction(e -> {
             root.getChildren().remove(gameOverPane);
             sceneSwitcher.accept("preparation");
         });
 
-        Button mainMenuButton = new Button("Main Menu");
-        mainMenuButton.setTranslateX(250);
-        mainMenuButton.setTranslateY(300);
+        Button mainMenuButton = createStyledButton("Main Menu", buttonGradient, shadow);
         mainMenuButton.setOnAction(e -> {
             root.getChildren().remove(gameOverPane);
             sceneSwitcher.accept("main");
         });
 
-        Button soundToggleButton = new Button(soundManager.get().isSoundEnabled() ? "Sound: ON" : "Sound: OFF");
-        soundToggleButton.setTranslateX(250);
-        soundToggleButton.setTranslateY(340);
+        Button soundToggleButton = createStyledButton(soundManager.get().isSoundEnabled() ? "Sound: ON" : "Sound: OFF", buttonGradient, shadow);
         soundToggleButton.setOnAction(e -> {
             boolean isEnabled = !soundManager.get().isSoundEnabled();
             soundManager.get().setSoundEnabled(isEnabled);
@@ -437,26 +490,36 @@ public class GameScene {
             }
         });
 
-        Button highScoreButton = new Button("High Scores");
-        highScoreButton.setTranslateX(250);
-        highScoreButton.setTranslateY(380);
+        Button highScoreButton = createStyledButton("High Scores", buttonGradient, shadow);
         highScoreButton.setOnAction(e -> showHighScoreBoard());
 
-        Button historyButton = new Button("Game History"); // اضافه کردن دکمه تاریخچه
-        historyButton.setTranslateX(250);
-        historyButton.setTranslateY(420);
-        historyButton.setOnAction(e -> sceneSwitcher.accept("history"));
-
-        Button settingsButton = new Button("Settings");
-        settingsButton.setTranslateX(250);
-        settingsButton.setTranslateY(460);
+        Button settingsButton = createStyledButton("Settings", buttonGradient, shadow);
         settingsButton.setOnAction(e -> sceneSwitcher.accept("settings"));
 
-        gameOverPane.getChildren().addAll(gameOverText, currentScoreText, highScoreText, restartButton, changeDifficultyButton, mainMenuButton, soundToggleButton, highScoreButton, historyButton, settingsButton);
+        leftColumn.getChildren().addAll(restartButton, changeDifficultyButton, mainMenuButton, soundToggleButton);
+        rightColumn.getChildren().addAll(highScoreButton, settingsButton);
+
+        FadeTransition fadeIn = new FadeTransition(Duration.millis(1000), gameOverPane);
+        fadeIn.setFromValue(0);
+        fadeIn.setToValue(1);
+        fadeIn.play();
+
         root.getChildren().add(gameOverPane);
+        gameOverPane.getChildren().addAll(gameOverText, currentScoreText, highScoreText, leftColumn, rightColumn);
 
         soundManager.get().stopBackgroundMusic();
         soundManager.get().playSpeedIncreaseSound();
+    }
+
+    private Button createStyledButton(String text, LinearGradient gradient, DropShadow shadow) {
+        Button button = new Button(text);
+        button.setFont(Font.font("Verdana", 16));
+        button.setPrefSize(140, 30);
+        button.setStyle("-fx-background-color: linear-gradient(#ff9329, #c86400); -fx-text-fill: white; -fx-background-radius: 10;");
+        button.setEffect(shadow);
+        button.setOnMouseEntered(e -> button.setStyle("-fx-background-color: linear-gradient(#ffaa40, #e07b00); -fx-text-fill: white; -fx-background-radius: 10;"));
+        button.setOnMouseExited(e -> button.setStyle("-fx-background-color: linear-gradient(#ff9329, #c86400); -fx-text-fill: white; -fx-background-radius: 10;"));
+        return button;
     }
 
     private void showHighScoreBoard() {
@@ -469,25 +532,25 @@ public class GameScene {
         highScorePane.setPrefSize(600, 400);
 
         Text title = new Text("High Scores");
-        title.setFont(Font.font("Arial", 40));
+        title.setFont(Font.font("Verdana", 40));
         title.setFill(Color.YELLOW);
         title.setTranslateX(220);
         title.setTranslateY(50);
 
         Text easyScoreText = new Text("Easy: 00:00");
-        easyScoreText.setFont(Font.font("Arial", 20));
+        easyScoreText.setFont(Font.font("Verdana", 20));
         easyScoreText.setFill(Color.WHITE);
         easyScoreText.setTranslateX(250);
         easyScoreText.setTranslateY(100);
 
         Text mediumScoreText = new Text("Medium: 00:00");
-        mediumScoreText.setFont(Font.font("Arial", 20));
+        mediumScoreText.setFont(Font.font("Verdana", 20));
         mediumScoreText.setFill(Color.WHITE);
         mediumScoreText.setTranslateX(250);
         mediumScoreText.setTranslateY(140);
 
         Text hardScoreText = new Text("Hard: 00:00");
-        hardScoreText.setFont(Font.font("Arial", 20));
+        hardScoreText.setFont(Font.font("Verdana", 20));
         hardScoreText.setFill(Color.WHITE);
         hardScoreText.setTranslateX(250);
         hardScoreText.setTranslateY(180);
@@ -537,8 +600,6 @@ public class GameScene {
         timerText.setText("TIME 00:00");
 
         resetSpeeds();
-        double spawnIntervalSeconds = BASE_SPAWN_DISTANCE / obstacleSpeed;
-        spawnInterval = (long) (spawnIntervalSeconds * 1_000_000_000);
     }
 
     public void startGame() {
@@ -552,13 +613,38 @@ public class GameScene {
 
             @Override
             public void handle(long now) {
-                if (isPaused) return; // اگه بازی توقف شده، ادامه نده
+                if (isPaused) return;
 
                 hexagonRotation += rotationSpeed;
                 hexagon.setRotate(hexagonRotation);
 
-                for (Line line : backgroundLines) {
-                    line.setRotate(hexagonRotation);
+                double maxRadius = 300;
+                for (int i = 0; i < backgroundSections.size(); i++) {
+                    double startAngle = Math.toRadians(60 * i + hexagonRotation);
+                    double endAngle = Math.toRadians(60 * (i + 1) + hexagonRotation);
+                    Polygon section = backgroundSections.get(i);
+                    section.getPoints().setAll(
+                            300.0, 200.0,
+                            300 + Math.cos(startAngle) * maxRadius, 200 + Math.sin(startAngle) * maxRadius,
+                            300 + Math.cos(endAngle) * maxRadius, 200 + Math.sin(endAngle) * maxRadius
+                    );
+                }
+
+                if (now - lastColorChange > COLOR_CHANGE_INTERVAL) {
+                    Color[] newTheme = colorThemes.get(random.nextInt(colorThemes.size()));
+                    colorLight = newTheme[0];
+                    colorDark = newTheme[1];
+                    colorObstacle = newTheme[2];
+                    for (int i = 0; i < backgroundSections.size(); i++) {
+                        backgroundSections.get(i).setFill(i % 2 == 0 ? colorLight : colorDark);
+                    }
+                    for (Polygon obstacle : obstacles) {
+                        obstacle.setFill(colorObstacle);
+                    }
+                    hexagon.setStroke(colorObstacle);
+                    hexagon.setFill(colorDark);
+                    player.setFill(colorObstacle);
+                    lastColorChange = now;
                 }
 
                 updatePlayerPosition();
@@ -569,18 +655,22 @@ public class GameScene {
                 }
 
                 if (now - lastSpeedIncrease > 10_000_000_000L) {
-                    rotationSpeed *= 1.1;
-                    obstacleSpeed *= 1.1;
-                    double spawnIntervalSeconds = BASE_SPAWN_DISTANCE / obstacleSpeed;
-                    spawnInterval = (long) (spawnIntervalSeconds * 1_000_000_000);
+                    rotationSpeed *= 1.05;
+                    obstacleSpeed *= 1.05;
+                    // فاصله اسپان ثابت می‌مونه، پس هیچ تغییری اعمال نمی‌کنیم
                     lastSpeedIncrease = now;
-                    System.out.println("Rotation speed increased to: " + rotationSpeed);
                 }
 
                 double elapsedSeconds = (System.nanoTime() - startTime) / 1_000_000_000.0;
                 int minutes = (int) (elapsedSeconds / 60);
                 int seconds = (int) (elapsedSeconds % 60);
                 timerText.setText(String.format("TIME %02d:%02d", minutes, seconds));
+
+                HighScore highScore = getHighScore.get();
+                double highScoreValue = (highScore != null) ? highScore.getScore() : 0;
+                int highScoreMinutes = (int) (highScoreValue / 60);
+                int highScoreSeconds = (int) (highScoreValue % 60);
+                highScoreText.setText(String.format("BEST %02d:%02d", highScoreMinutes, highScoreSeconds));
 
                 for (Polygon obstacle : new ArrayList<>(obstacles)) {
                     double[] data = (double[]) obstacle.getUserData();
@@ -618,13 +708,19 @@ public class GameScene {
                     Shape intersection = Shape.intersect(player, obstacle);
                     double distanceToObstacle = calculateDistanceToObstacle(player, obstacle);
                     if (intersection.getBoundsInLocal().getWidth() != -1 && distanceToObstacle < 65 + COLLISION_TOLERANCE) {
-                        System.out.println("Collision detected! Distance: " + distanceToObstacle);
                         soundManager.get().playCollisionSound();
                         double score = (System.nanoTime() - startTime) / 1_000_000_000.0;
                         updateHighScore.accept(new HighScore(getGameMode.get(), score));
                         gameLoop.stop();
-                        soundManager.get().stopBackgroundMusic();
-                        showGameOverScreen(score);
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(200);
+                                soundManager.get().stopBackgroundMusic();
+                                javafx.application.Platform.runLater(() -> showGameOverScreen(score));
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        }).start();
                     }
                 }
             }
