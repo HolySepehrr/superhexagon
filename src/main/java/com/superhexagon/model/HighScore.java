@@ -13,6 +13,10 @@ public class HighScore {
         return difficulty;
     }
 
+    public void setDifficulty(GameMode difficulty) {
+        this.difficulty = difficulty;
+    }
+
     public double getScore() {
         return score;
     }

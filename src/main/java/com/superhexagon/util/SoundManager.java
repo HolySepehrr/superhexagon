@@ -7,11 +7,16 @@ public class SoundManager {
     private AudioClip backgroundMusic;
     private AudioClip collisionSound;
     private AudioClip speedIncreaseSound;
-    private boolean soundEnabled = true;
+    private boolean soundEnabled;
+    private final DataManager dataManager;
 
     public SoundManager() {
+        dataManager = new DataManager();
+        DataManager.GameData gameData = dataManager.loadGameData();
+        soundEnabled = gameData.isSoundEnabled();
+
         backgroundMusic = loadAudioClip("/easy_theme.mp3");
-        collisionSound = loadAudioClip("/collision.wav");
+        collisionSound = loadAudioClip("/collision.mp3");
         speedIncreaseSound = loadAudioClip("/speed_increase.wav");
     }
 
@@ -67,5 +72,7 @@ public class SoundManager {
 
     public void setSoundEnabled(boolean enabled) {
         this.soundEnabled = enabled;
+        DataManager.GameData gameData = dataManager.loadGameData();
+        dataManager.saveGameData(gameData.getHighScores(), soundEnabled, gameData.getGameHistory());
     }
 }
